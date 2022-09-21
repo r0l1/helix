@@ -26,6 +26,27 @@ macro_rules! get_theme {
     };
 }
 
+const ICONS: &'static [&'static str] =
+    &["", "", "", "", "", "ﰟ", "", "", "", "ﯤ", "", "ﬥ"];
+
+const ICONS_EXT: &'static [&'static str] = &[
+    ".rs", ".md", ".js", ".c", ".png", ".svg", ".css", ".html", ".lua", ".ts", ".py", ".json",
+];
+
+const ICONS_COLORS: &'static [helix_view::theme::Color] = &[
+    helix_view::theme::Color::Rgb(227, 134, 84),
+    helix_view::theme::Color::LightCyan,
+    helix_view::theme::Color::Yellow,
+    helix_view::theme::Color::Blue,
+    helix_view::theme::Color::Yellow,
+    helix_view::theme::Color::Yellow,
+    helix_view::theme::Color::Green,
+    helix_view::theme::Color::Blue,
+    helix_view::theme::Color::Red,
+    helix_view::theme::Color::Blue,
+    helix_view::theme::Color::Red,
+];
+
 #[derive(Debug, Clone, Copy, PartialEq)]
 enum FileType {
     File,
@@ -39,18 +60,24 @@ enum FileType {
 #[derive(Debug, Clone)]
 struct FileInfo {
     file_type: FileType,
+    expanded: bool,
     path: PathBuf,
 }
 
 impl FileInfo {
     fn new(path: PathBuf, file_type: FileType) -> Self {
-        Self { path, file_type }
+        Self {
+            path,
+            file_type,
+            expanded: false,
+        }
     }
 
     fn root(path: PathBuf) -> Self {
         Self {
             file_type: FileType::Root,
             path,
+            expanded: true,
         }
     }
 
@@ -59,6 +86,7 @@ impl FileInfo {
         Self {
             file_type: FileType::Parent,
             path: p.to_path_buf(),
+            expanded: false,
         }
     }
 
@@ -159,6 +187,7 @@ impl TreeItem for FileInfo {
                     Self {
                         file_type,
                         path: self.path.join(entry.file_name()),
+                        expanded: false,
                     }
                 })
             })
@@ -167,6 +196,7 @@ impl TreeItem for FileInfo {
             ret.push(Self {
                 path: self.path.clone(),
                 file_type: FileType::Placeholder,
+                expanded: false,
             })
         }
         Ok(ret)
@@ -178,6 +208,33 @@ impl TreeItem for FileInfo {
         } else {
             self.get_text().contains(s)
         }
+    }
+
+    fn icon(&self) -> Option<(&'static str, &'static helix_view::theme::Color)> {
+        return match self.file_type {
+            FileType::Dir => {
+                if self.expanded {
+                    //Some(("", &helix_view::theme::Color::Yellow))
+                    Some(("", &helix_view::theme::Color::Yellow))
+                } else {
+                    // Some(("", &helix_view::theme::Color::Yellow))
+                    Some(("", &helix_view::theme::Color::Yellow))
+                }
+            }
+            FileType::File => {
+                for (i, ext) in ICONS_EXT.iter().enumerate() {
+                    if self.get_text().ends_with(ext) {
+                        let color = ICONS_COLORS
+                            .iter()
+                            .nth(i)
+                            .unwrap_or(&helix_view::theme::Color::Blue);
+                        return ICONS.iter().nth(i).map(|c| (*c, color));
+                    }
+                }
+                return Some(("", &helix_view::theme::Color::LightBlue));
+            }
+            _ => None,
+        };
     }
 }
 
@@ -254,7 +311,9 @@ impl Explorer {
         let current_root = std::env::current_dir().unwrap_or_else(|_| "./".into());
         let items = Self::get_items(current_root.clone(), cx)?;
         Ok(Self {
-            tree: Tree::build_tree(items).with_enter_fn(Self::toggle_current),
+            tree: Tree::build_tree(items)
+                .with_enter_fn(Self::toggle_current)
+                .with_folded_fn(Self::fold_current),
             state: State::new(true, current_root),
             repeat_motion: None,
             prompt: None,
@@ -266,8 +325,9 @@ impl Explorer {
         let current_root = std::env::current_dir().unwrap_or_else(|_| "./".into());
         let parent = FileInfo::parent(&current_root);
         let root = FileInfo::root(current_root.clone());
-        let mut tree =
-            Tree::build_from_root(root, usize::MAX / 2)?.with_enter_fn(Self::toggle_current);
+        let mut tree = Tree::build_from_root(root, usize::MAX / 2)?
+            .with_enter_fn(Self::toggle_current)
+            .with_folded_fn(Self::fold_current);
         tree.insert_current_level(parent);
         Ok(Self {
             tree,
@@ -319,7 +379,12 @@ impl Explorer {
         if item.file_type == FileType::Placeholder {
             return;
         }
-        let head_area = render_block(area.clip_bottom(area.height - 2), surface, Borders::BOTTOM);
+        let head_area = render_block(
+            area.clip_bottom(area.height - 2),
+            surface,
+            Borders::BOTTOM,
+            None,
+        );
         let path_str = format!("{}", item.path.display());
         surface.set_stringn(
             head_area.x,
@@ -434,6 +499,12 @@ impl Explorer {
         ));
     }
 
+    fn fold_current(item: &mut FileInfo, _cx: &mut Context, _state: &mut State) {
+        if item.path.is_dir() {
+            item.expanded = false;
+        }
+    }
+
     fn toggle_current(
         item: &mut FileInfo,
         cx: &mut Context,
@@ -453,7 +524,7 @@ impl Explorer {
             }
         };
         if meta.is_file() {
-            if let Err(e) = cx.editor.open(&item.path, Action::Replace) {
+            if let Err(e) = cx.editor.open(&item.path.clone(), Action::Replace) {
                 cx.editor.set_error(format!("{e}"));
             }
             state.focus = false;
@@ -461,6 +532,7 @@ impl Explorer {
         }
 
         if item.path.is_dir() {
+            item.expanded = true;
             if cx.editor.config().explorer.is_list() || item.file_type == FileType::Parent {
                 match Self::get_items(item.path.clone(), cx) {
                     Ok(items) => {
@@ -481,19 +553,28 @@ impl Explorer {
         let background = cx.editor.theme.get("ui.background");
         let column_width = cx.editor.config().explorer.column_width as u16;
         surface.clear_with(area, background);
-        let area = render_block(area, surface, Borders::ALL);
+        let area = render_block(area, surface, Borders::ALL, None);
 
         let mut preview_area = area.clip_left(column_width + 1);
         if let Some((_, prompt)) = self.prompt.as_mut() {
             let area = preview_area.clip_bottom(2);
-            let promp_area =
-                render_block(preview_area.clip_top(area.height), surface, Borders::TOP);
+            let promp_area = render_block(
+                preview_area.clip_top(area.height),
+                surface,
+                Borders::TOP,
+                None,
+            );
             prompt.render(promp_area, surface, cx);
             preview_area = area;
         }
         self.render_preview(preview_area, surface, cx.editor);
 
-        let list_area = render_block(area.clip_right(preview_area.width), surface, Borders::RIGHT);
+        let list_area = render_block(
+            area.clip_right(preview_area.width),
+            surface,
+            Borders::RIGHT,
+            None,
+        );
         self.tree.render(list_area, surface, cx, &mut self.state);
     }
 
@@ -502,14 +583,21 @@ impl Explorer {
         let side_area = area
             .with_width(area.width.min(config.column_width as u16 + 2))
             .clip_bottom(1);
-        let background = cx.editor.theme.get("ui.background");
+
+        let background = cx.editor.theme.get("ui.statusline");
         surface.clear_with(side_area, background);
 
         let preview_area = area.clip_left(side_area.width).clip_bottom(2);
         let prompt_area = area.clip_top(side_area.height);
 
-        let list_area =
-            render_block(side_area.clip_left(1), surface, Borders::RIGHT).clip_bottom(1);
+        let border_style = cx.editor.theme.get("ui.explorer.border");
+        let list_area = render_block(
+            side_area.clip_left(1),
+            surface,
+            Borders::RIGHT,
+            Some(border_style),
+        )
+        .clip_bottom(1);
         self.tree.render(list_area, surface, cx, &mut self.state);
 
         {
@@ -543,7 +631,7 @@ impl Explorer {
             }
             let area = Rect::new(preview_area.x, y, width, height);
             surface.clear_with(area, background);
-            let area = render_block(area, surface, Borders::all());
+            let area = render_block(area, surface, Borders::all(), None);
             self.render_preview(area, surface, cx.editor);
         }
 
@@ -757,7 +845,9 @@ impl Component for Explorer {
                     match Self::get_items(p.to_path_buf(), cx) {
                         Ok(items) => {
                             self.state.current_root = p.to_path_buf();
-                            self.tree = Tree::build_tree(items).with_enter_fn(Self::toggle_current);
+                            self.tree = Tree::build_tree(items)
+                                .with_enter_fn(Self::toggle_current)
+                                .with_folded_fn(Self::fold_current);
                         }
                         Err(e) => cx.editor.set_error(format!("{e}")),
                     }
@@ -859,8 +949,17 @@ fn get_preview(p: impl AsRef<Path>, max_line: usize) -> Result<Vec<String>> {
         .collect())
 }
 
-fn render_block(area: Rect, surface: &mut Surface, borders: Borders) -> Rect {
-    let block = Block::default().borders(borders);
+fn render_block(
+    area: Rect,
+    surface: &mut Surface,
+    borders: Borders,
+    border_style: Option<helix_view::theme::Style>,
+) -> Rect {
+    let mut block = Block::default().borders(borders);
+    if let Some(style) = border_style {
+        block = block.border_style(style);
+    }
+    //let block = Block::default();
     let inner = block.inner(area);
     block.render(area, surface);
     inner

@@ -78,6 +78,12 @@
 "ui.explorer.focus" = { modifiers = ["reversed"] }
 "ui.explorer.unfocus" = { bg = "bg3" }
 
+"ui.explorer.file" = { fg = "fg" }
+"ui.explorer.dir" = { fg = "blue" }
+"ui.explorer.exe" = { fg = "fg" }
+"ui.explorer.focus" = { modifiers = ["reversed"] }
+"ui.explorer.unfocus" = { bg = "bg3" }
+
 [palette]
 
 bg0 = "#323437"
