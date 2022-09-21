@@ -134,31 +134,19 @@ pub struct ExplorerConfig {
 
 impl ExplorerConfig {
     pub fn is_embed(&self) -> bool {
-        match self.position {
-            ExplorerPosition::Embed => true,
-            ExplorerPosition::Overlay => false,
-        }
+        return self.position == ExplorerPosition::Embed;
     }
 
     pub fn is_overlay(&self) -> bool {
-        match self.position {
-            ExplorerPosition::Embed => false,
-            ExplorerPosition::Overlay => true,
-        }
+        return self.position == ExplorerPosition::Overlay;
     }
 
     pub fn is_list(&self) -> bool {
-        match self.style {
-            ExplorerStyle::List => true,
-            ExplorerStyle::Tree => false,
-        }
+        return self.style == ExplorerStyle::List;
     }
 
     pub fn is_tree(&self) -> bool {
-        match self.style {
-            ExplorerStyle::List => false,
-            ExplorerStyle::Tree => true,
-        }
+        return self.style == ExplorerStyle::Tree;
     }
 }
 
