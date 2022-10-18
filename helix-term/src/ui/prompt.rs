@@ -101,7 +101,7 @@ impl Prompt {
     }
 
     /// Compute the cursor position after applying movement
-    /// Taken from: https://github.com/wez/wezterm/blob/e0b62d07ca9bf8ce69a61e30a3c20e7abc48ce7e/termwiz/src/lineedit/mod.rs#L516-L611
+    /// Taken from: <https://github.com/wez/wezterm/blob/e0b62d07ca9bf8ce69a61e30a3c20e7abc48ce7e/termwiz/src/lineedit/mod.rs#L516-L611>
     fn eval_movement(&self, movement: Movement) -> usize {
         match movement {
             Movement::BackwardChar(rep) => {
@@ -293,6 +293,7 @@ impl Prompt {
         register: char,
         direction: CompletionDirection,
     ) {
+        (self.callback_fn)(cx, &self.line, PromptEvent::Abort);
         let register = cx.editor.registers.get_mut(register).read();
 
         if register.is_empty() {
@@ -314,6 +315,7 @@ impl Prompt {
         self.history_pos = Some(index);
 
         self.move_end();
+        (self.callback_fn)(cx, &self.line, PromptEvent::Update);
         self.recalculate_completion(cx.editor);
     }
 
@@ -564,13 +566,11 @@ impl Component for Prompt {
             ctrl!('p') | key!(Up) => {
                 if let Some(register) = self.history_register {
                     self.change_history(cx, register, CompletionDirection::Backward);
-                    (self.callback_fn)(cx, &self.line, PromptEvent::Update);
                 }
             }
             ctrl!('n') | key!(Down) => {
                 if let Some(register) = self.history_register {
                     self.change_history(cx, register, CompletionDirection::Forward);
-                    (self.callback_fn)(cx, &self.line, PromptEvent::Update);
                 }
             }
             key!(Tab) => {
